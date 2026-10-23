@@ -1,0 +1,13 @@
+{
+  "name": "shelfscout-api",
+  "version": "1.0.0",
+  "description": "Backend functions for ShelfScout",
+  "main": "src/functions/*.js",
+  "scripts": {
+    "test": "node test/run.js"
+  },
+  "dependencies": {
+    "@azure/data-tables": "^13.2.2",
+    "@azure/functions": "^4.5.0"
+  }
+}
