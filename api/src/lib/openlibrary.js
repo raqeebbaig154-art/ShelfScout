@@ -5,13 +5,31 @@ const GENRES = ['fiction', 'science_fiction', 'romance', 'fantasy', 'technology'
 const WORK_ID = /^OL\d+W$/;
 const AUTHOR_KEY = /^\/authors\/OL\d+A$/;
 
-async function getJson(url, timeoutMs) {
+const FRESH_MS = 10 * 60 * 1000;      // reuse an answer for 10 minutes
+const STALE_MS = 24 * 60 * 60 * 1000; // if Open Library is down, an answer up to 24 hours old is better than an error
+const MAX_CACHE = 300;
+const cache = new Map();
+const settings = { retryDelayMs: 400 };
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function remember(url, data) {
+  if (cache.size >= MAX_CACHE) cache.delete(cache.keys().next().value);
+  cache.set(url, { data, time: Date.now() });
+}
+
+async function fetchOnce(url, timeoutMs) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs || 8000);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const res = await fetch(url, {
       signal: controller.signal,
-      headers: { Accept: 'application/json', 'User-Agent': 'ShelfScout/1.0 (student project)' }
+      headers: {
+        Accept: 'application/json',
+        'User-Agent': 'ShelfScout/1.0 (student cloud computing project; https://github.com/raqeebbaig154-art/ShelfScout)'
+      }
     });
     if (res.status === 404) {
       const e = new Error('Not found');
@@ -35,6 +53,27 @@ async function getJson(url, timeoutMs) {
   } finally {
     clearTimeout(timer);
   }
+}
+
+// Tries twice, remembers good answers, and falls back to an older answer if the service is down.
+async function getJson(url) {
+  const hit = cache.get(url);
+  if (hit && Date.now() - hit.time < FRESH_MS) return hit.data;
+
+  let lastErr;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const data = await fetchOnce(url, 6000);
+      remember(url, data);
+      return data;
+    } catch (err) {
+      lastErr = err;
+      if (err.status === 404) throw err;
+      if (attempt === 0) await sleep(settings.retryDelayMs);
+    }
+  }
+  if (hit && Date.now() - hit.time < STALE_MS) return hit.data;
+  throw lastErr;
 }
 
 function cleanParams(input) {
@@ -130,4 +169,4 @@ async function getBook(id) {
   };
 }
 
-module.exports = { GENRES, WORK_ID, cleanParams, searchBooks, getBook, cleanDescription };
+module.exports = { GENRES, WORK_ID, cleanParams, searchBooks, getBook, cleanDescription, _cache: cache, _settings: settings };

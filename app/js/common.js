@@ -44,10 +44,10 @@
   SS.iconNode = iconSpan;
 
   /* ---------- network ---------- */
-  SS.api = async function (path, options) {
+  async function request(path, options) {
     options = options || {};
     var controller = new AbortController();
-    var timer = setTimeout(function () { controller.abort(); }, options.timeout || 12000);
+    var timer = setTimeout(function () { controller.abort(); }, options.timeout || 20000);
     var headers = { Accept: 'application/json' };
     if (options.body) headers['Content-Type'] = 'application/json';
     var res;
@@ -69,6 +69,22 @@
       throw herr;
     }
     return data;
+  }
+
+  SS.retryDelay = 800;
+  // reading data is tried a second time automatically when the server is busy or slow
+  SS.api = async function (path, options) {
+    options = options || {};
+    var attempts = (options.method || 'GET') === 'GET' ? 2 : 1;
+    for (var i = 0; ; i++) {
+      try {
+        return await request(path, options);
+      } catch (err) {
+        var busy = err.code === 'timeout' || err.code === 'network' || err.status === 502 || err.status === 504;
+        if (!busy || i >= attempts - 1) throw err;
+        await new Promise(function (r) { setTimeout(r, SS.retryDelay); });
+      }
+    }
   };
 
   SS.friendlyError = function (err) {
